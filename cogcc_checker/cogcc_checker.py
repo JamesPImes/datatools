@@ -12,7 +12,8 @@ To use:
 1) For each relevant well, navigate to its scout card on the COGCC
 website and download the production records in .xls format.
 2) Save the .xls spreadsheets to a common directory (with nothing else
-in it).
+in it), using the default filenames provided by the COGCC website (which
+encode the unique API number for each well).
 3) From command line:
     py cogcc_checker.py -dir "<filepath to directory>"
 
@@ -46,12 +47,13 @@ import argparse
 from calendar import monthrange
 from datetime import datetime
 import textwrap
+import zipfile
 
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.dates import date2num
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 __disclaimer__ = (
     "Note that there are certain limitations to the COGCC's records. "
     "For example, production is reported on a month-by-month basis. "
@@ -66,102 +68,104 @@ __disclaimer__ = (
 )
 __author__ = "James P. Imes"
 __email__ = "jamesimes@gmail.com"
+__website__ = "github.com/jamespimes"
 
 
-def find_shutin_periods(df, add_columns=True):
+def running_timeperiods(
+        df, date_col, logic, day_col_header=None, month_col_header=None):
     """
-    Add columns (in-situ) for running consecutive months and days of
-    shut-in periods (if `add_columns=True`, on by default). Return a
-    list of 2-tuples of all shut-in periods.
-    :param df:
-    :param add_columns: Whether to add the appropriate columns to the
-    DataFrame. Defaults to `True`.
-    :return: A list of 2-tuples (being start/end months, inclusive, of
-    months)
-    """
-    days_si = []
-    months_si = []
-    days_si_counting = 0
-    months_si_counting = 0
-    last_si_date = None
-    si_start_stops = []
+    Count the running number of consecutive days and months during which
+    a condition remains True. Specify the condition by passing a
+    function as arg `logic=<function>` (the function should return a
+    bool or value that can be interpreted as a bool in an `if`
+    statement, and should operate on the values of each row).
 
-    for row in df.iterrows():
-        first_day = row[1]["FirstOfMonth"]
-        last_day = row[1]["LastOfMonth"]
-        if row[1]["any_well_shutin"] and not row[1]["any_well_active"]:
-            days_si_counting += last_day.day
-            months_si_counting += 1
-            if last_si_date is None:
-                last_si_date = first_day
+    Returns a new DataFrame of the start dates and end dates of those
+    periods of time, and the total days and months represented by each
+    such period.
+
+    Optionally add columns to the original DataFrame for the running
+    totals by specifying the headers of args `day_col_header=<str>`
+    and/or `month_col_header=<str>`.
+
+    NOTE: Only works for a DataFrame where each row is a single month,
+    represented by the first calendar day of the month, and where there
+    are no gaps in time.
+
+    :param df: A pandas DataFrame.
+    :param date_col: The header of the column containing the dates to
+    check against. (Should all be first day of month.)
+    :param logic: A function (lambda or otherwise) to apply to each row
+    to determine if that row falls within an intended gap. The function
+    should return a boolean (or otherwise resolve to True or False in an
+    `if` statement).  ex: `lambda row: row["OilProduced"] == 0`
+    :param day_col_header: A string specifying the header for the added
+    column for running day counts. If left as None, will not add the
+    column.
+    :param month_col_header: A string specifying the header for the
+    added column for running month counts. If left as None, will not add
+    the column.
+    :return: A list of 2-tuples, being the start/end dates (inclusive)
+    of the periods that match the provided logic.
+    """
+
+    days_col_new = []
+    months_col_new = []
+    days_counter = 0
+    months_counter = 0
+    start_of_new_gap = None
+    prev_last_day = None
+    gaps = []
+
+    for _, row in df.iterrows():
+        first_day = row[date_col]
+        last_day = pd.to_datetime(get_last_day(first_day))
+        if logic(row):
+            days_counter += last_day.day
+            months_counter += 1
+            if start_of_new_gap is None:
+                start_of_new_gap = first_day
         else:
-            if last_si_date is not None:
-                si_start_stops.append((last_si_date, first_day))
-            days_si_counting = 0
-            months_si_counting = 0
-            last_si_date = None
-        days_si.append(days_si_counting)
-        months_si.append(months_si_counting)
+            if start_of_new_gap is not None:
+                gaps.append((start_of_new_gap, prev_last_day))
+            days_counter = 0
+            months_counter = 0
+            start_of_new_gap = None
+        days_col_new.append(days_counter)
+        months_col_new.append(months_counter)
+        prev_last_day = last_day
 
-        # TODO: In case it is most recently shut-in... Capture that.
+    if start_of_new_gap is not None:
+        # In case the final row matches our `logic`, then it would mark
+        # the final gap in our dataset, and need to handle add it to our
+        # gaps list.
+        gaps.append((start_of_new_gap, prev_last_day))
 
-    if add_columns:
-        # Add a column for how many days / months it's been shut-in.
-        df["months_si"] = months_si
-        df["days_si"] = days_si
+    # Add the columns, if requested
+    if day_col_header is not None:
+        df[day_col_header] = days_col_new
+    if month_col_header is not None:
+        df[month_col_header] = months_col_new
 
-    return si_start_stops
+    gaps_df = pd.DataFrame({
+        "start_date": [x[0] for x in gaps],
+        "end_date": [x[1] for x in gaps]
+    })
 
+    total_months = []
+    total_days = []
+    if len(gaps_df) > 0:
+        # Summarize the total months and days for the gaps dataframe
+        total_months = (
+                (gaps_df["end_date"].dt.year - gaps_df["start_date"].dt.year) * 12
+                + (gaps_df["end_date"].dt.month - gaps_df["start_date"].dt.month) + 1
+        )
+        total_days = (gaps_df["end_date"] - gaps_df["start_date"]).dt.days + 1
 
-def find_production_gaps(df, raw=False, add_columns=True):
-    """
-    Add columns (in-situ) for running consecutive months and days of
-    non-production (if `add_columns=True`, which is on by default).
-    Return a list of 2-tuples of all periods of non-production.
-    Optionally consider shut-in months as producing with `raw=False`
-    (which is default behavior).
-    :param df:
-    :param add_columns: Whether to add the appropriate columns to the
-    DataFrame. Defaults to `True`.
-    :param raw: If True, will include periods that were covered by
-    shut-in wells. If False, will be those periods with no production
-    where the wells were also not shut-in. (Defaults to False.)
-    :return: A list of 2-tuples (being start/end months, inclusive, of
-    months)
-    """
-    days_nonprod = []
-    months_nonprod = []
-    days_nonprod_counting = 0
-    months_nonprod_counting = 0
-    last_prod_stop = None
-    prod_stop_starts = []
+    gaps_df["total_months"] = total_months
+    gaps_df["total_days"] = total_days
 
-    for row in df.iterrows():
-        first_day = row[1]["FirstOfMonth"]
-        last_day = row[1]["LastOfMonth"]
-        no_prod = row[1]["GasProduced"] + row[1]["OilProduced"] == 0
-        if no_prod and (raw or not row[1]["any_well_shutin"]):
-            days_nonprod_counting += last_day.day
-            months_nonprod_counting += 1
-            if last_prod_stop is None:
-                last_prod_stop = first_day
-        else:
-            if last_prod_stop is not None:
-                prod_stop_starts.append((last_prod_stop, first_day))
-            days_nonprod_counting = 0
-            months_nonprod_counting = 0
-            last_prod_stop = None
-        days_nonprod.append(days_nonprod_counting)
-        months_nonprod.append(months_nonprod_counting)
-
-        # TODO: In case it is most recently not producing... Capture that.
-
-    if add_columns:
-        # Add a column for how many days / months since there was production.
-        df[f"months_nonprod{'_raw' * raw}"] = months_nonprod
-        df[f"days_nonprod{'_raw' * raw}"] = days_nonprod
-
-    return prod_stop_starts
+    return gaps_df
 
 
 def get_last_day(dt):
@@ -173,31 +177,32 @@ def get_last_day(dt):
     return f"{dt.year}-{str(dt.month).rjust(2, '0')}-{str(last_day).rjust(2, '0')}"
 
 
-def output_gaps(timestamps: list, header="Gaps:", threshold=0):
+def output_gaps_as_string(df, header="Gaps:", threshold_days=0):
     """
-    Cull the list of 2-tuples containing Timestamp objects, down to
-    those gaps greater than or equal to the number of days specified as
-    `threshold`. Output a clean string.
-    :param timestamps: A list of 2-tuples, as output by
-    find_production_gaps() or find_shutin_periods().
-    :param header: Title to print atop the string.
-    :param threshold: Number of days.
-    :return: A clean string.
+    Clean up and output the contents of a DataFrame that was returned by
+    the running_timeperiods() function as a single string, with the
+    specified header, and limited to those periods that are at least as
+    long as the specified number of `threshold_days`.
     """
-    threshold = pd.Timedelta(threshold, unit="day")
-    outs = [x for x in timestamps if lambda x: (x[1] - x[0]) >= threshold]
-    lines = [
-        " -- {}{} -- {}".format(
-            (str((out[1] - out[0]).days) + " days:").ljust(12, " "),
-            out[0].isoformat()[:10],
-            out[1].isoformat()[:10]
-        )
-        for out in outs
-    ]
-    if not lines:
-        lines = [f" -- [None that meet the threshold of {threshold.days} days.]"]
+    lines = []
+    for _, row in df.iterrows():
+        if row["total_days"] > threshold_days:
+            s = " -- {} days ({} months)".format(
+                row["total_days"],
+                row["total_months"]
+            ).ljust(26, ' ')
 
-    return header + "\n" + "\n".join(lines)
+            s = s + "::  {} -- {}".format(
+                row['start_date'].isoformat()[:10],
+                row['end_date'].isoformat()[:10]
+            )
+
+            lines.append(s)
+
+    if len(lines) == 0:
+        lines = [" -- None that meet the threshold."]
+
+    return header + f"\n[[at least {threshold_days} days in length]]\n" + "\n".join(lines)
 
 
 def main():
@@ -208,8 +213,11 @@ def main():
         "-dir", "--d", type=str, required=True,
         help="The filepath to the directory containing the relevant .xls files")
     parser.add_argument(
-        '-launch', '--launch', action='store_true',
-        help="Open the output directory after analyzing")
+        "-launch", "--l", action="store_true",
+        help="Specify to open the output directory after analysis is complete")
+    parser.add_argument(
+        "-zip", "--z", action="store_true",
+        help="Specify to add source .xls files to .zip file in output directory")
     args = vars(parser.parse_args())
 
     DIR = args["d"] + "\\"
@@ -239,9 +247,10 @@ def main():
         df["api_num"] = api_num
         dfs.append(df)
 
-        # Store filename and file creation time (i.e. when it was pulled from COGCC)
+        # Store filename, file creation time (i.e. when it was pulled from COGCC),
+        # and the full filepath.
         ctime = pd.to_datetime(os.path.getctime(fp), unit="s").isoformat()[:10]
-        api_nums[api_num] = (f, ctime)
+        api_nums[api_num] = (f, ctime, fp)
 
     # concatenate the dataframes into a single production dataframe
     prod = pd.concat(dfs, ignore_index=True)
@@ -288,42 +297,69 @@ def main():
 
     prod_gb = prod.groupby("FirstOfMonth", as_index=False)[fields].agg(aggfuncs)
 
-    # Add the last day of each month.
-    prod_gb["LastOfMonth"] = pd.to_datetime(prod_gb["FirstOfMonth"].apply(get_last_day))
+    # # Add the last day of each month.
+    # prod_gb["LastOfMonth"] = pd.to_datetime(prod_gb["FirstOfMonth"].apply(get_last_day))
 
     # -----------------------------------------------
     # Analyze gaps in production, and periods where wells are only shut-in
 
-    # TODO: Bugfix. `nonprods` (i.e. `raw=True`) is not functioning properly
-    nonprods = find_production_gaps(prod_gb)
-    nonprods_raw = find_production_gaps(prod_gb, raw=True)
-    si = find_shutin_periods(prod_gb)
+    # The conditions we'll check against.
+    logic_base = {
+        "production_raw": lambda row: (
+                (row["GasProduced"] + row["OilProduced"]) == 0
+        ),
+        "production": lambda row: (
+                (row["GasProduced"] + row["OilProduced"]) == 0
+                and not row["any_well_shutin"]
+        ),
+        "shutin": lambda row: (
+                (row["GasProduced"] + row["OilProduced"]) == 0
+                and row["any_well_shutin"]
+        )
+    }
+
+    # Production gaps, where shut-in does NOT count as production
+    nonprods_raw_df = running_timeperiods(
+        prod_gb, date_col="FirstOfMonth", logic=logic_base["production_raw"],
+        day_col_header="days_nonprod_raw", month_col_header="months_nonprod_raw")
+
+    # Production gaps, where shut-in DOES count as production
+    nonprods_df = running_timeperiods(
+        prod_gb, date_col="FirstOfMonth", logic=logic_base["production"],
+        day_col_header="days_nonprod", month_col_header="months_nonprod")
+
+    # Production gaps that are otherwise filled by at least one shut-in well
+    shutin_df = running_timeperiods(
+        prod_gb, date_col="FirstOfMonth", logic=logic_base["shutin"],
+        day_col_header="days_shutin", month_col_header="months_shutin")
 
     # -----------------------------------------------
     # Save our results to files.
 
-    # Dump DataFrame to csv
+    # Dump DataFrames to csv
     prod_gb.to_csv(SAVE_DIR + "production_summary.csv")
+    nonprods_raw_df.to_csv(SAVE_DIR + "production_gaps_raw.csv")
+    nonprods_df.to_csv(SAVE_DIR + "production_gaps.csv")
+    shutin_df.to_csv(SAVE_DIR + "shutin_periods.csv")
 
     # Write .txt file summary
     with open(SAVE_DIR + "production_gaps_summary.txt", "w") as file:
 
         file.write(
             "Production from {} through {}...\n\n".format(
-                FIRST_MONTH.isoformat()[:10], LAST_MONTH.isoformat()[:10]))
+                FIRST_MONTH.isoformat()[:7], LAST_MONTH.isoformat()[:7]))
 
-        file.write(output_gaps(
-            nonprods_raw, "Gaps in production (raw):",
+        file.write(output_gaps_as_string(
+            nonprods_raw_df, "Gaps in production (raw):", MIN_DAYS_PRODUCTION_CESSATION))
+        file.write("\n\n")
+
+        file.write(output_gaps_as_string(
+            nonprods_df, "Gaps in production (with shut-ins counting as production):",
             MIN_DAYS_PRODUCTION_CESSATION))
         file.write("\n\n")
 
-        file.write(output_gaps(
-            nonprods, "Gaps in production (with shut-ins counting as production):",
-            MIN_DAYS_PRODUCTION_CESSATION))
-        file.write("\n\n")
-
-        file.write(output_gaps(
-            si, "Periods of shut-in:", MIN_DAYS_SHUTIN_PERIOD))
+        file.write(output_gaps_as_string(
+            shutin_df, "Periods of shut-in:", MIN_DAYS_SHUTIN_PERIOD))
         file.write("\n\n")
 
         file.write("Considering wells...\n")
@@ -336,13 +372,16 @@ def main():
         file.write("\n\n")
         file.write(f"Generated by COGCC Checker, version {__version__}\n")
         file.write(f"Copyright (c) 2021, {__author__}.\n")
-        file.write(f"<{__email__}>")
+        file.write(f"<{__email__}>\n")
+        file.write(f"<{__website__}>")
 
     # Generate and save a simple graph of production, highlighting the gaps
     fig, ax = plt.subplots()
-    gas_color = "red"
+    gas_color = "green"
     oil_color = "blue"
-    al = 0.6
+    highlight_color = "red"
+    gas_al = 1.0
+    oil_al = 0.6
 
     title = "Total Verified Production {} to {}".format(
         FIRST_MONTH.isoformat()[:7], LAST_MONTH.isoformat()[:7])
@@ -350,26 +389,33 @@ def main():
 
     y_vals = prod_gb["FirstOfMonth"]
 
-    ax.plot(y_vals, prod_gb["GasProduced"], color=gas_color, alpha=al)
+    ax.plot(y_vals, prod_gb["GasProduced"], color=gas_color, alpha=gas_al)
     ax2 = ax.twinx()
-    ax2.plot(y_vals, prod_gb["OilProduced"], color=oil_color, alpha=al)
+    ax2.plot(y_vals, prod_gb["OilProduced"], color=oil_color, alpha=oil_al)
 
     ax.set_xlabel("Time (year)")
     ax.set_ylabel("Gas produced (Mcf)", color=gas_color)
     ax2.set_ylabel("Oil produced (Bbls)", color=oil_color)
 
     lb = "Production Gaps (raw)"
-    for gap in nonprods_raw:
-        d1 = date2num(datetime(gap[0].year, gap[0].month, gap[0].day))
-        d2 = date2num(datetime(gap[1].year, gap[1].month, gap[1].day))
-        ax.axvspan(d1, d2, color="aqua", alpha=0.3, label=lb)
+    for _, row in nonprods_raw_df.iterrows():
+        sd = row["start_date"]
+        ed = row["end_date"]
+        d1 = date2num(datetime(sd.year, sd.month, sd.day))
+        d2 = date2num(datetime(ed.year, ed.month, ed.day))
+        ax.axvspan(d1, d2, color=highlight_color, alpha=0.3, label=lb)
         lb = None
 
-    ax.legend(loc=0)
+    ax.legend()
 
     fig.savefig(SAVE_DIR + "production_graph.png")
 
-    if args["launch"]:
+    if args["z"]:
+        with zipfile.ZipFile(SAVE_DIR + "source.zip", "w") as zipper:
+            for v in api_nums.values():
+                zipper.write(v[2], arcname=v[0])
+
+    if args["l"]:
         os.startfile(SAVE_DIR)
 
     print(f"Success. Results saved to {SAVE_DIR}.")

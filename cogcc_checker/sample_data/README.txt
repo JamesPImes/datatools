@@ -1,0 +1,1 @@
+This sample data was arbitrarily chosen and has been modified somewhat (deleted some rows) to test some functionality, as compared to the original data pulled from the COGCC website.

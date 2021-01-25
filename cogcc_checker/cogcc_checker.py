@@ -186,7 +186,7 @@ def output_gaps_as_string(df, header="Gaps:", threshold_days=0):
     """
     lines = []
     for _, row in df.iterrows():
-        if row["total_days"] > threshold_days:
+        if row["total_days"] >= threshold_days:
             s = " -- {} days ({} months)".format(
                 row["total_days"],
                 row["total_months"]

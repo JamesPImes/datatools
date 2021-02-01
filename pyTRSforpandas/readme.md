@@ -41,12 +41,19 @@ print(sample_df[["lots", "qqs"]])
 
 (Even if the PLSS land descriptions in the dataframe contain multiple TRS's, and if that data has not been parsed.)
 
+*__Note:__* TRS must be specified in the format used by pyTRS, being a single string consisting of three parts:
+-- Twp specified as __up to__ 3 digits (or fewer if appropriate), plus the direction as a lowercase `'n'` or `'s'` (e.g. `'154n'` or `'6s'`)
+-- Rge specified as __up to__ 3 digits (or fewer if appropriate), plus the direction as a lowercase `'e'` or `'w'` (e.g. `'97w'` or `'101e'`)
+-- Section specified as __exactly__ 2 digits (e.g., `'14'` or `'02'`)
+
+... so, for example, `'154n97w14'` (for Section 14 of T154N-R97W) of `'6s101e02'` (for Section 2, T6S-R101E).
+
 ```
 # Create a DataFrame from a .csv file with PLSS land descriptions in a column
 # with the header "land_desc"
 sample_df = pd.read_csv(r"C:\land\sample_land_descriptions.csv")
 
-relevant_trs_list = ["154n97w14", "6s87e01"]
+relevant_trs_list = ["154n97w14", "6s101e02"]
 
 # Filter the dataframe to those whose land descriptions include one or both of the TRS's in
 # relevant_trs_list

@@ -43,9 +43,9 @@ print(sample_df[["lots", "qqs"]])
 
 *__Note:__* TRS must be specified in the format used by pyTRS, being a single string consisting of three parts:
 
--- Twp specified as __up to__ 3 digits (or fewer if appropriate), plus the direction as a lowercase `'n'` or `'s'` (e.g. `'154n'` or `'6s'`)
+-- Twp specified as __up to__ 3 digits (use fewer if appropriate), plus the direction as a lowercase `'n'` or `'s'` (e.g. `'154n'` or `'6s'`)
 
--- Rge specified as __up to__ 3 digits (or fewer if appropriate), plus the direction as a lowercase `'e'` or `'w'` (e.g. `'97w'` or `'101e'`)
+-- Rge specified as __up to__ 3 digits (use fewer if appropriate), plus the direction as a lowercase `'e'` or `'w'` (e.g. `'97w'` or `'101e'`)
 
 -- Section specified as __exactly__ 2 digits (e.g., `'14'` or `'02'`)
 
@@ -56,15 +56,22 @@ print(sample_df[["lots", "qqs"]])
 # with the header "land_desc"
 sample_df = pd.read_csv(r"C:\land\sample_land_descriptions.csv")
 
+# To filter for a single Twp/Rge/Sec, pass `trs` as a string
+filtered_df_single = filter_by_trs(
+    sample_df, plss_col="land_desc", trs="154n97w14")
+
+# To filter for multiple TRS, pass a list as `trs`...
 relevant_trs_list = ["154n97w14", "6s101e02"]
 
-# Filter the dataframe to those whose land descriptions include one or both of the TRS's in
-# relevant_trs_list
-filtered_df_containing = filter_by_trs(sample_df, plss_col="land_desc", trs=relevant_trs_list)
+# Filter the dataframe to those whose land descriptions include at least one of the
+# TRS's in the list...
+filtered_df_including = filter_by_trs(
+    sample_df, plss_col="land_desc", trs=relevant_trs_list)
 
 # Use the `include=False` arg to filter for those descriptions that contain NONE of the
 # Twp/Rge/Sec's passed as `trs`.
-filtered_df_excluding = filter_by_trs(sample_df, plss_col="land_desc", trs=relevant_trs_list, include=False)
+filtered_df_excluding = filter_by_trs(
+    sample_df, plss_col="land_desc", trs=relevant_trs_list, include=False)
 ```
 
 For this method, a match of __any__ TRS will count as a positive match, both for purposes of inclusive filter (`include=True`) and exclusive filter (`include=False`).

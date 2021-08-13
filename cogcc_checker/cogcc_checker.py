@@ -2,7 +2,7 @@
 
 """
 ----- COGCC Checker -----
-A command-line application to analyze one or more .xls files downloaded
+A command-line application to analyze one or more .xlsx files downloaded
 from the public records of the Colorado Oil & Gas Conservation
 Commission (COGCC) website at <https://cogcc.state.co.us/#/home> to
 quickly see if there has been consistent production of oil and/or gas to
@@ -10,8 +10,8 @@ apparently "hold" an oil and gas lease.
 
 To use:
 1) For each relevant well, navigate to its scout card on the COGCC
-website and download the production records in .xls format.
-2) Save the .xls spreadsheets to a common directory (with nothing else
+website and download the production records in .xls or .xlsx format.
+2) Save the .xlsx spreadsheets to a common directory (with nothing else
 in it), using the default filenames provided by the COGCC website (which
 encode the unique API number for each well).
 3) From command line:
@@ -32,6 +32,12 @@ This program will help visualize when wells may have been shut-in, or
 when production otherwise ceased, to help investigate whether the
 provisions of a given lease have been met.
 
+
+CHANGELOG:
+-- v0.0.3: Now also accepts '.xlsx' files (because the COGCC has started
+    exporting to that file format).
+
+
 # TODO: features to add:
 -- Customize the minimum gap in production before bothering to flag it.
 -- Customize the minimum shut-in period before bothering to flag it.
@@ -39,7 +45,7 @@ provisions of a given lease have been met.
 -- Customize the minimum Bbls of oil or Mcf of gas to count as
 actual production within each well, and within all wells.
 -- Customize the date range to consider.
--- Automate downloading .xls files from COGCC?
+-- Automate downloading .xlsx files from COGCC?
 """
 
 import os
@@ -53,7 +59,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.dates import date2num
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 __disclaimer__ = (
     "Note that there are certain limitations to the COGCC's records. "
     "For example, production is reported on a month-by-month basis. "
@@ -239,7 +245,7 @@ def main():
     dfs = []
     api_nums = {}
     for f in files:
-        if not f.lower().endswith(".xls"):
+        if not f.lower().endswith((".xls", ".xlsx")):
             continue
         fp = DIR + f
         df = pd.read_excel(fp, parse_dates=["FirstOfMonth"])

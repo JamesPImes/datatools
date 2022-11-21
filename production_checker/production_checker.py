@@ -223,14 +223,15 @@ class ProductionChecker:
             if prod_col is None:
                 return 0
             prod = row_[prod_col]
+            if pd.isna(prod):
+                prod = 0
             if prod < prod_min:
                 prod = 0
             return prod
 
         oil_prod = check_min_prod(row, self.oil_prod_col, self.oil_prod_min)
         gas_prod = check_min_prod(row, self.gas_prod_col, self.gas_prod_min)
-        prod_values = [oil_prod, gas_prod]
-        return sum(prod_values) > 0
+        return oil_prod + gas_prod > 0
 
     def row_is_shutin(self, row) -> bool:
         """

@@ -98,11 +98,19 @@ class ProductionChecker:
     def standardize_dates(self, df) -> pd.DataFrame:
         """
         Convert all dates in the configured ```.date_col``` to the first
-        of the month.
+        of the month, and fill in any missing months between the first
+        and last months.
         """
         df = df.copy(deep=True)
         df[self.date_col] = first_day_of_month(df[self.date_col])
-        return df
+
+        # Ensure there are no months missing from the data.
+        first_month = df[self.date_col].min()
+        last_month = df[self.date_col].max()
+        every_month = pd.DataFrame()
+        every_month[self.date_col] = pd.date_range(
+            start=first_month, end=last_month, freq='MS')
+        return pd.concat([df, every_month], ignore_index=True)
 
     def get_relevant_groupby_fields(self):
         """

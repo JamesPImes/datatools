@@ -461,6 +461,7 @@ class ProductionChecker:
                     gap_end_date = first_day + timedelta(days=days_not_producing - 1)
                     new_gap = (gap_start_date, gap_end_date)
                     gaps.append(new_gap)
+                    gap_start_date = None
             else:
                 # Full production all month.
                 if gap_start_date is not None:

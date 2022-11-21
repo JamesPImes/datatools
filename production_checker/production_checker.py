@@ -137,40 +137,33 @@ class ProductionChecker:
          aggregating function (i.e. the values are passable to the
          ```.agg()``` method in ```pandas```).
         """
-        fields = [
-            self.date_col
-        ]
-        aggfuncs = {
-            # Using 'max' is arbitrary. Just need unique values.
-            self.date_col: 'max'
-        }
-        # These get aggregated by sum.
-        sum_fields = (
+        fields_source = (
+            self.date_col,
             self.oil_prod_col,
             self.gas_prod_col,
             self.NUM_ACTIVE,
             self.NUM_SHUTIN,
-        )
-        # These get aggregated by max.
-        max_fields = (
             self.ANY_ACTIVE,
             self.ANY_SHUTIN,
+            # self.DAYS_PRODUCING and self.DAYS_NOT_PRODUCING are added
+            # only if days_produced_col is configured.
         )
-        for field in sum_fields:
-            if field is not None:
-                fields.append(field)
-                # TODO: Custom sum function for production columns to only
-                #   count values that meet a user-specified threshold.
-                aggfuncs[field] = 'sum'
-        for field in max_fields:
-            if field is not None:
-                fields.append(field)
-                aggfuncs[field] = 'max'
+        aggfuncs_source = {
+            self.date_col: 'max',
+            self.oil_prod_col: 'sum',
+            self.gas_prod_col: 'sum',
+            self.NUM_ACTIVE: 'sum',
+            self.NUM_SHUTIN: 'sum',
+            self.ANY_ACTIVE: 'max',
+            self.ANY_SHUTIN: 'max',
+            self.DAYS_PRODUCING: 'max',
+            self.DAYS_NOT_PRODUCING: 'min',
+        }
+        fields = [f for f in fields_source if f is not None]
         if self.is_configured_days_produced:
             fields.append(self.DAYS_PRODUCING)
-            aggfuncs[self.DAYS_PRODUCING] = 'max'
             fields.append(self.DAYS_NOT_PRODUCING)
-            aggfuncs[self.DAYS_NOT_PRODUCING] = 'min'
+        aggfuncs = {fd: ag for fd, ag in aggfuncs_source.items() if fd in fields}
         return fields, aggfuncs
 
     def group_by_month(self):

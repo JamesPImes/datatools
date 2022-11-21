@@ -443,6 +443,9 @@ class ProductionChecker:
                     days_producing = 0
                     days_not_producing = days_in_month
 
+            # TODO: Figure out 'worst-case' scenario. This will entail
+            #  partial months adding both forward and backward (two
+            #  different scenarios).
             days_counter += days_not_producing
             if days_producing == 0:
                 # No production all month.

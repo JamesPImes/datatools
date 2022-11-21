@@ -61,6 +61,7 @@ class ProductionChecker:
         """
         self.df = df.copy(deep=True)
         self.date_col = date_col
+        self._standardize_dates()
         self.oil_prod_col = oil_prod_col
         self.gas_prod_col = gas_prod_col
         self.oil_prod_min = oil_prod_min
@@ -95,22 +96,36 @@ class ProductionChecker:
         """
         return self.days_produced_col is not None
 
-    def standardize_dates(self, df) -> pd.DataFrame:
+    @property
+    def first_month(self):
+        """Get the first day of the first month as a ```datetime```."""
+        first = self.df[self.date_col].min()
+        return first_day_of_month(first)
+
+    @property
+    def last_month(self):
+        """Get the first day of the last month as a ```datetime```."""
+        last = self.df[self.date_col].max()
+        return first_day_of_month(last)
+
+    def _standardize_dates(self):
         """
+        INTERNAL USE:
         Convert all dates in the configured ```.date_col``` to the first
         of the month, and fill in any missing months between the first
         and last months.
+
+        Store the results to ```.df``` as a deep copy of the original.
         """
-        df = df.copy(deep=True)
+        df = self.df.copy(deep=True)
         df[self.date_col] = first_day_of_month(df[self.date_col])
 
         # Ensure there are no months missing from the data.
-        first_month = df[self.date_col].min()
-        last_month = df[self.date_col].max()
         every_month = pd.DataFrame()
         every_month[self.date_col] = pd.date_range(
-            start=first_month, end=last_month, freq='MS')
-        return pd.concat([df, every_month], ignore_index=True)
+            start=self.first_month, end=self.last_month, freq='MS')
+        df = pd.concat([df, every_month], ignore_index=True)
+        self.df = df
 
     def get_relevant_groupby_fields(self):
         """
@@ -165,7 +180,7 @@ class ProductionChecker:
         Fields that were unspecified at init will not have any effect.
         """
         # This also makes a deep copy.
-        prod = self.standardize_dates(self.df)
+        prod = self.df.copy(deep=True)
 
         # Determine whether each well produced in a given month.
         prod[self.ANY_ACTIVE] = prod.apply(lambda row: self.row_is_producing(row), axis=1)
@@ -637,8 +652,6 @@ class ProductionChecker:
         :return: None. (Saves graph to the specified filepath.)
         """
         prod_df = self.prod_df
-        first_month = prod_df[self.date_col].min()
-        last_month = prod_df[self.date_col].max()
         if include_production is None:
             include_production = self.is_configured_production
 
@@ -651,8 +664,8 @@ class ProductionChecker:
 
         title = (
             f"Total Verified Production "
-            f"{first_month.isoformat()[:7]} "
-            f"to {last_month.isoformat()[:7]}"
+            f"{self.first_month.isoformat()[:7]} "
+            f"to {self.last_month.isoformat()[:7]}"
         )
         ax.set_title(title)
         y_vals = prod_df[self.date_col]

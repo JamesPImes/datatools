@@ -33,11 +33,11 @@ class ProductionChecker:
             date_col: str,
             oil_prod_col: str = None,
             gas_prod_col: str = None,
-            oil_prod_min: int = 0,
-            gas_prod_min: int = 0,
             days_produced_col: str = None,
             status_col: str = None,
-            shutin_codes: list = None
+            shutin_codes: list = None,
+            oil_prod_min: int = 0,
+            gas_prod_min: int = 0,
     ):
         """
         :param df: A ```DataFrame``` containing monthly oil and/or gas
@@ -48,16 +48,16 @@ class ProductionChecker:
          represents its entire month (e.g., 1/1/2011 for January 2011).
         :param oil_prod_col: (Optional) The header for oil production.
         :param gas_prod_col: (Optional) The header for gas production.
-        :param oil_prod_min: (Optional) Minimum threshold for oil
-         production (in BBLs). (Default is ```0```, i.e. no minimum.)
-        :param gas_prod_min: (Optional) Minimum threshold for gas
-         production (in MCF). (Default is ```0```, i.e. no minimum.)
         :param days_produced_col: The column header for the number of
          days that the well produced during this month.
         :param status_col: (Optional) The header for the column
          containing status codes.
         :param shutin_codes: (Optional) A list of case-sensitive status
          codes that can be considered shut-in.
+        :param oil_prod_min: (Optional) Minimum threshold for oil
+         production (in BBLs). (Default is ```0```, i.e. no minimum.)
+        :param gas_prod_min: (Optional) Minimum threshold for gas
+         production (in MCF). (Default is ```0```, i.e. no minimum.)
         """
         self.df = df.copy(deep=True)
         self.date_col = date_col

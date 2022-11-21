@@ -112,8 +112,8 @@ class ProductionChecker:
         """
         INTERNAL USE:
         Convert all dates in the configured ```.date_col``` to the first
-        of the month, and fill in any missing months between the first
-        and last months.
+        of the month, fill in any missing months between the first and
+        last months, and sort by date (ascending).
 
         Store the results to ```.df``` as a deep copy of the original.
         """
@@ -125,6 +125,7 @@ class ProductionChecker:
         every_month[self.date_col] = pd.date_range(
             start=self.first_month, end=self.last_month, freq='MS')
         df = pd.concat([df, every_month], ignore_index=True)
+        df.sort_values(by=[self.date_col], ascending=True)
         self.df = df
 
     def get_relevant_groupby_fields(self):
@@ -200,7 +201,9 @@ class ProductionChecker:
 
         fields, aggfuncs = self.get_relevant_groupby_fields()
         grouped = prod.groupby(self.date_col, as_index=False)
-        return grouped[fields].agg(aggfuncs)
+        output = grouped[fields].agg(aggfuncs)
+        output.sort_values(by=[self.date_col], ascending=True)
+        return output
 
     def row_is_producing(self, row) -> bool:
         """

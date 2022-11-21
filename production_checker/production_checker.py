@@ -281,7 +281,7 @@ class ProductionChecker:
         days_produced = row[self.days_produced_col]
         if days_produced is None:
             return days_in_month
-        return days_produced - days_in_month
+        return days_in_month - days_produced
 
     def gaps_by_production_threshold(
             self,

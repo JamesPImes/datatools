@@ -118,7 +118,7 @@ class ProductionChecker:
         Store the results to ```.df``` as a deep copy of the original.
         """
         df = self.df.copy(deep=True)
-        df[self.date_col] = first_day_of_month(df[self.date_col])
+        df[self.date_col] = df[self.date_col].apply(lambda x: first_day_of_month(x))
 
         # Ensure there are no months missing from the data.
         every_month = pd.DataFrame()
@@ -196,7 +196,7 @@ class ProductionChecker:
             prod[self.DAYS_PRODUCING] = prod[self.days_produced_col]
             # Corresponding days NOT producing, will be aggregated by min.
             prod[self.DAYS_NOT_PRODUCING] = prod.apply(
-                lambda row: self.row_num_unproducing_days(row))
+                lambda row: self.row_num_unproducing_days(row), axis=1)
 
         fields, aggfuncs = self.get_relevant_groupby_fields()
         return prod.groupby(self.date_col, as_index=False)[fields].agg(aggfuncs)

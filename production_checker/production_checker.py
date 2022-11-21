@@ -165,8 +165,8 @@ class ProductionChecker:
             if field is not None:
                 fields.append(field)
                 aggfuncs[field] = 'max'
-        if self.days_produced_col is not None:
-            fields.append(self.days_produced_col)
+        if self.is_configured_days_produced:
+            fields.append(self.DAYS_PRODUCING)
             aggfuncs[self.DAYS_PRODUCING] = 'max'
             fields.append(self.DAYS_NOT_PRODUCING)
             aggfuncs[self.DAYS_NOT_PRODUCING] = 'min'
@@ -199,7 +199,8 @@ class ProductionChecker:
                 lambda row: self.row_num_unproducing_days(row), axis=1)
 
         fields, aggfuncs = self.get_relevant_groupby_fields()
-        return prod.groupby(self.date_col, as_index=False)[fields].agg(aggfuncs)
+        grouped = prod.groupby(self.date_col, as_index=False)
+        return grouped[fields].agg(aggfuncs)
 
     def row_is_producing(self, row) -> bool:
         """

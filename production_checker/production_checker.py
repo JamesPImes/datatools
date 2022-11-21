@@ -454,11 +454,11 @@ class ProductionChecker:
                 if gap_start_date is None:
                     # If starting a new gap, assume that all the non-producing
                     # days occurred at the end of the month.
-                    gap_start_date = last_day - timedelta(days=days_not_producing) + 1
+                    gap_start_date = last_day - timedelta(days=days_not_producing + 1)
                 else:
                     # If ending a gap, assume that all the non-producing days
                     # occurred at the start of the month.
-                    gap_end_date = first_day + timedelta(days=days_not_producing) - 1
+                    gap_end_date = first_day + timedelta(days=days_not_producing - 1)
                     new_gap = (gap_start_date, gap_end_date)
                     gaps.append(new_gap)
             else:

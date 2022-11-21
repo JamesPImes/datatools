@@ -345,7 +345,7 @@ class ProductionChecker:
             df[new_days_col] = running_days_vals
         if new_months_col is not None:
             df[new_months_col] = running_months_vals
-        return self._gaps_to_dataframe(gaps)
+        return self._time_ranges_to_dataframe(gaps)
 
     def gaps_by_producing_days(
             self,
@@ -470,44 +470,127 @@ class ProductionChecker:
             df[new_days_col] = running_days_vals
         if new_months_col is not None:
             df[new_months_col] = running_months_vals
-        return self._gaps_to_dataframe(gaps)
+        return self._time_ranges_to_dataframe(gaps)
+
+    def periods_of_shutin(
+            self,
+            consider_production: bool = None,
+            new_days_col: str = None,
+            new_months_col: str = None,
+    ):
+        """
+        Find the periods during which at least one well is explicitly
+        shut-in. With the optional parameter ```consider_production```,
+        any oil/gas production that meets the configured threshold will
+        render a shut-in status code null (i.e. with sufficient
+        production in a given month, that month will not be considered
+        shut-in, regardless of its status code).
+
+        IMPORTANT: This method considers production on a monthly basis,
+         so any production that meets the threshold is considered to
+         have occurred across the entire month. Thus, in a theoretical
+         January when all the production actually occurred only on first
+         day of the month (and on no other days), there would NOT be
+         considered any gap -- even though the well(s) was technically
+         NOT producing for 30 days.
+
+        :param consider_production: Whether to consider production at or
+         beyond the configured threshold to override an explicit shut-in
+         status code.
+        :param new_days_col: (Optional) The header to add to the
+         production ```DataFrame``` at ```.prod_df``` for the running
+         days. If not specified, that data will not be added.
+        :param new_months_col: (Optional) The header to add to the
+         production ```DataFrame``` at ```.prod_df``` for the running
+         months. If not specified, that data will not be added.
+        :return: A ```DataFrame``` showing the ```'total_months'``` and
+         ```'total_days'``` in each shut-in time period.
+        """
+        if consider_production is None:
+            consider_production = self.is_configured_production
+        df = self.prod_df
+
+        running_days_vals = []
+        running_months_vals = []
+        days_counter = 0
+        months_counter = 0
+        period_start_date = None
+        previous_last_day = None
+        periods = []
+
+        for _, row in df.iterrows():
+            first_day = row[self.date_col]
+            days_in_month = get_days_in_month(first_day)
+            last_day = last_day_of_month(first_day)
+            is_producing = False
+            if consider_production:
+                is_producing = row[self.ANY_ACTIVE]
+            is_shutin = row[self.ANY_SHUTIN]
+
+            if is_shutin and not is_producing:
+                days_counter += days_in_month
+                months_counter += 1
+                if period_start_date is None:
+                    period_start_date = first_day
+            else:
+                if period_start_date is not None:
+                    new_period = (period_start_date, previous_last_day)
+                    periods.append(new_period)
+                days_counter = 0
+                months_counter = 0
+                period_start_date = None
+            running_days_vals.append(days_counter)
+            running_months_vals.append(months_counter)
+            previous_last_day = last_day
+
+        if period_start_date is not None:
+            # The final row was part of a matching time period.
+            new_period = (period_start_date, previous_last_day)
+            periods.append(new_period)
+
+        # Add the columns, if requested
+        if new_days_col is not None:
+            df[new_days_col] = running_days_vals
+        if new_months_col is not None:
+            df[new_months_col] = running_months_vals
+        return self._time_ranges_to_dataframe(periods)
 
     @staticmethod
-    def _gaps_to_dataframe(gaps: list) -> pd.DataFrame:
+    def _time_ranges_to_dataframe(time_ranges: list) -> pd.DataFrame:
         """
         INTERNAL USE:
         Convert a list of start/end dates into a ```DataFrame``` of the
         total number of calendar months and days within each date pair.
-        :param gaps: A list of 2 ```datetime``` objects representing the
-         start and end dates of each gap.
+        :param time_ranges: A list of 2 ```datetime``` objects
+         representing the start and end dates of each time period.
         :return: A ```DataFrame``` showing the ```'total_months'``` and
          ```'total_days'``` within each date range.
         """
-        gaps_df = pd.DataFrame({
-            "start_date": [x[0] for x in gaps],
-            "end_date": [x[1] for x in gaps]
+        periods = pd.DataFrame({
+            "start_date": [x[0] for x in time_ranges],
+            "end_date": [x[1] for x in time_ranges]
         })
         total_months = []
         total_days = []
-        if len(gaps_df) > 0:
+        if len(periods) > 0:
             # Summarize the total months and days for the gaps dataframe
             total_months = (
-                    (gaps_df["end_date"].dt.year - gaps_df["start_date"].dt.year) * 12
-                    + (gaps_df["end_date"].dt.month - gaps_df["start_date"].dt.month) + 1
+                    (periods["end_date"].dt.year - periods["start_date"].dt.year) * 12
+                    + (periods["end_date"].dt.month - periods["start_date"].dt.month) + 1
             )
-            total_days = (gaps_df["end_date"] - gaps_df["start_date"]).dt.days + 1
-        gaps_df["total_months"] = total_months
-        gaps_df["total_days"] = total_days
-        return gaps_df
+            total_days = (periods["end_date"] - periods["start_date"]).dt.days + 1
+        periods["total_months"] = total_months
+        periods["total_days"] = total_days
+        return periods
 
     @staticmethod
     def output_gaps_as_string(gaps_df, header='Gaps:', threshold_days=0) -> str:
         """
         Clean up the contents of a ```DataFrame``` that was returned by
-        a returned by a gap-determining method. Output
-        the running_timeperiods() function as a single string, with the
-        specified header, and limited to those periods that are at least
-        as long as the specified number of ```threshold_days```.
+        a returned by a gap-determining method. Output as a single
+        string, with the specified header, and limited to those periods
+        that are at least as long as the specified number of
+        ```threshold_days```.
         :param gaps_df: A ```DataFrame``` that was output by a method
          that determines gaps.
         :param header: The header to write before specifying the gaps.

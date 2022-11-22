@@ -618,21 +618,39 @@ class ProductionChecker:
         :return: A single string of the gap sizes and dates.
         """
         lines = []
+        max_gap_num_days = 0
+        max_gap_dates = []
         for _, row in gaps_df.iterrows():
-            if row['total_days'] >= threshold_days:
-                s = f" -- {row['total_days']} days " \
+            total_days = row['total_days']
+            date_range = (
+                f"{row['start_date'].isoformat()[:10]} "
+                f"-- {row['end_date'].isoformat()[:10]}"
+            )
+            # Keep track of the biggest gap.
+            if total_days == max_gap_num_days:
+                max_gap_dates.append(f" >> {date_range}")
+            elif total_days > max_gap_num_days:
+                max_gap_num_days = total_days
+                max_gap_dates = [f" >> {date_range}"]
+
+            # Report all gaps that meet the threshold.
+            if total_days >= threshold_days:
+                s = f" -- {total_days} days " \
                     f"({row['total_months']} months)"
                 s = s.ljust(26, ' ')
-                s = f"{s}::  " \
-                    f"{row['start_date'].isoformat()[:10]} " \
-                    f"-- {row['end_date'].isoformat()[:10]}"
+                s = f"{s}::  {date_range}"
                 lines.append(s)
         if len(lines) == 0:
             lines = [' -- None that meet the threshold.']
         lines_joined = '\n'.join(lines)
-        output = f"{header}\n" \
-                 f"[[at least {threshold_days} days in length]]\n" \
-                 f"{lines_joined}"
+        dates_joined = '\n'.join(max_gap_dates)
+        output = (
+            f"{header}\n"
+            f"[[Biggest: {max_gap_num_days} days]]\n"
+            f"{dates_joined}\n"
+            f"[[All those that are at least {threshold_days} days in length]]\n"
+            f"{lines_joined}"
+        )
         return output
 
     def generate_graph(

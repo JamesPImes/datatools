@@ -639,7 +639,9 @@ class ProductionChecker:
             self,
             gaps_df: pd.DataFrame,
             fp,
-            include_production: bool = None):
+            include_production: bool = None,
+            threshold_days: int = 0
+    ):
         """
         Generate and save a simple graph of production, highlighting the
         gaps.
@@ -651,6 +653,9 @@ class ProductionChecker:
          is not specified, the default behavior is to project production
          if the oil and/or gas production columns were configured. If
          those were not configured, then this will have no effect.)
+        :param threshold_days: The minimum number of days for a gap to
+         highlight it on the graph. (Defaults to ```0``` -- i.e.
+         highlight gaps of all sizes.)
         :return: None. (Saves graph to the specified filepath.)
         """
         prod_df = self.prod_df
@@ -688,12 +693,14 @@ class ProductionChecker:
             gas_axis.plot(y_vals, [0 for _ in y_vals], color=gas_color, alpha=0)
         ax.set_xlabel('Time (year)')
 
-        gaps_label = "Production Gaps (raw)"
+        gaps_label = "Production Gaps"
         for _, row in gaps_df.iterrows():
             start_date = row["start_date"]
             end_date = row["end_date"]
             d1 = date2num(datetime(start_date.year, start_date.month, start_date.day))
             d2 = date2num(datetime(end_date.year, end_date.month, end_date.day))
+            if d2 - d1 + 1 < threshold_days:
+                continue
             ax.axvspan(d1, d2, color=highlight_color, alpha=0.3, label=gaps_label)
             gaps_label = None
         ax.legend()

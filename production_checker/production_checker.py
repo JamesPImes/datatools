@@ -61,7 +61,6 @@ class ProductionChecker:
         """
         self.df = df.copy(deep=True)
         self.date_col = date_col
-        self._standardize_dates()
         self.oil_prod_col = oil_prod_col
         self.gas_prod_col = gas_prod_col
         self.oil_prod_min = oil_prod_min
@@ -71,6 +70,7 @@ class ProductionChecker:
             shutin_codes = [shutin_codes]
         self.shutin_codes = shutin_codes
         self.days_produced_col = days_produced_col
+        self._standardize_dates()
         self.prod_df = self.group_by_month()
 
     @property
@@ -97,6 +97,15 @@ class ProductionChecker:
         return self.days_produced_col is not None
 
     @property
+    def configured_fields(self):
+        possible = [
+            self.date_col,
+            self.oil_prod_col,
+            self.gas_prod_col
+            ]
+        return [f for f in possible if f is not None]
+
+    @property
     def first_month(self):
         """Get the first day of the first month as a ```datetime```."""
         first = self.df[self.date_col].min()
@@ -113,7 +122,8 @@ class ProductionChecker:
         INTERNAL USE:
         Convert all dates in the configured ```.date_col``` to the first
         of the month, fill in any missing months between the first and
-        last months, and sort by date (ascending).
+        last months, and sort by date (ascending). Any added dates will
+        have values of 0 for the relevant fields.
 
         Store the results to ```.df``` as a deep copy of the original.
         """
@@ -124,7 +134,7 @@ class ProductionChecker:
         every_month = pd.DataFrame()
         every_month[self.date_col] = pd.date_range(
             start=self.first_month, end=self.last_month, freq='MS')
-        df = pd.concat([df, every_month], ignore_index=True)
+        df = pd.concat([df, every_month], ignore_index=True).fillna(0)
         df.sort_values(by=[self.date_col], ascending=True)
         self.df = df
 
@@ -386,6 +396,14 @@ class ProductionChecker:
          gap of 64 days (being 10 days in March + 30 days in April + 24
          days in May).
 
+         Moreover, in calculating gaps, this method will assume an
+         impossible scenario, that all of the non-producing days
+         occurred at the start of the month AND at the end of the month.
+         Only one of these scenarios is possible (or none, if the
+         non-producing days did not occur consecutively). However, this
+         is necessary to determine the 'worst case' scenario -- i.e. the
+         largest gap possible, given the available data.
+
          On the other hand, in calculating total months in each gap,
          this method includes only those months with exactly 0 days of
          production.
@@ -448,32 +466,43 @@ class ProductionChecker:
             #  different scenarios).
             days_counter += days_not_producing
             if days_producing == 0:
+                running_days_vals.append(days_counter)
                 # No production all month.
                 months_counter += 1
                 if gap_start_date is None:
                     gap_start_date = first_day
             elif days_not_producing > 0:
                 # Partial production.
+                running_days_vals.append(days_counter)
                 if gap_start_date is None:
                     # If starting a new gap, assume that all the non-producing
                     # days occurred at the end of the month.
-                    gap_start_date = last_day - timedelta(days=days_not_producing + 1)
+                    gap_start_date = last_day - timedelta(days=days_not_producing - 1)
                 else:
                     # If ending a gap, assume that all the non-producing days
                     # occurred at the start of the month.
                     gap_end_date = first_day + timedelta(days=days_not_producing - 1)
                     new_gap = (gap_start_date, gap_end_date)
                     gaps.append(new_gap)
-                    gap_start_date = None
+                    # Because we're tracking a 'worst-case scenario', we want to
+                    # add partial-month gaps as though they occurred BOTH at the
+                    # beginning AND end of the month, so that they can be tacked
+                    # onto subsequent months. Obviously, only one (or none) of
+                    # these two scenarios can actually be true, but because we
+                    # don't know which, we'll report it both ways.
+                    months_counter = 0
+                    days_counter = days_not_producing
+                    gap_start_date = last_day - timedelta(days=days_not_producing - 1)
             else:
                 # Full production all month.
+                days_counter = 0
+                months_counter = 0
+                running_days_vals.append(days_counter)
                 if gap_start_date is not None:
                     new_gap = (gap_start_date, previous_last_day)
                     gaps.append(new_gap)
-                days_counter = 0
-                months_counter = 0
                 gap_start_date = None
-            running_days_vals.append(days_counter)
+
             running_months_vals.append(months_counter)
             previous_last_day = last_day
 
@@ -636,8 +665,8 @@ class ProductionChecker:
             # Report all gaps that meet the threshold.
             if total_days >= threshold_days:
                 s = f" -- {total_days} days " \
-                    f"({row['total_months']} months)"
-                s = s.ljust(26, ' ')
+                    f"({row['total_months']} calendar months)"
+                s = s.ljust(36, ' ')
                 s = f"{s}::  {date_range}"
                 lines.append(s)
         if len(lines) == 0:
